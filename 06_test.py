@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
 import random
 
 # 전역 변수
@@ -10,6 +10,38 @@ word_length = 0  # 불러온 단어의 개수
 current_question_index = 0  # 현재 문제 
 correct_count = 0  # 맞춘 개수
 wrong_count = 0  # 틀린 개수
+wrong_words = [] # 틀린 단어
+
+def save_wrong_words():
+    """틀린 단어를 새로운 엑셀 파일로 저장합니다."""
+    if not wrong_words:
+        messagebox.showinfo("정보", "틀린 단어가 없습니다!")
+        return
+
+    try:
+        # 파일 저장 대화 상자 열기
+        save_path = filedialog.asksaveasfilename(
+            title="엑셀 파일 저장",
+            defaultextension=".xlsx",
+            filetypes=(("Excel files", "*.xlsx"), ("All files", "*.*"))
+        )
+        if not save_path:
+            return
+
+        # 새로운 엑셀 파일 생성 및 데이터 추가
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "틀린 단어"
+        sheet.append(["단어", "뜻"])  # 헤더 추가
+        for word, meaning in wrong_words:
+            sheet.append([word, meaning])
+
+        # 파일 저장
+        workbook.save(save_path)
+        messagebox.showinfo("성공", f"틀린 단어가 {save_path}에 저장되었습니다!")
+
+    except Exception as e:
+        messagebox.showerror("오류", f"파일 저장 중 오류 발생: {e}")
 
 def open_excel():
     """엑셀 파일을 선택하고 단어를 로드합니다."""
@@ -61,7 +93,7 @@ def load_words():
 
 def start_test():
     """테스트 창을 열고 문제를 표시합니다."""
-    global file_path, words, word_length, current_question_index, correct_count, wrong_count, show_correct_var, show_wrong_var
+    global file_path, words, word_length, current_question_index, correct_count, wrong_count, show_correct_var, show_wrong_var, wrong_words_var, wrong_words
     if not file_path:
         # 파일이 선택되지 않은 경우 경고 메시지 표시
         messagebox.showwarning("경고", "엑셀 파일을 먼저 선택하세요!")
@@ -70,8 +102,11 @@ def start_test():
     # 단어 리스트를 랜덤으로 섞음
     random.shuffle(words)
 
-    correct_count = 0  # 맞춘 개수 초기화
+    # 초기화
+    correct_count = 0  # 맞춘 개수
     wrong_count = 0  # 틀린 개수 
+    wrong_words = [] # 틀린 단어
+    current_question_index = 0 # 현재 문제
     
     def update_counts():
         """맞은 개수와 틀린 개수를 업데이트합니다."""
@@ -80,13 +115,18 @@ def start_test():
 
     def next_question():
         """다음 문제를 화면에 표시합니다."""
-        global current_question_index
-
         if current_question_index >= word_length:
             # 모든 문제가 끝났을 경우 완료 메시지 표시
-            messagebox.showinfo("테스트 완료", "모든 문제가 출제되었습니다!")
-            test_window.destroy()  # 테스트 창 닫기
+            def finish_test():
+                if wrong_words_var.get() and wrong_words:
+                    save_wrong_words()
+                messagebox.showinfo("테스트 완료", "모든 문제가 출제되었습니다!")
+                test_window.destroy()  # 테스트 창 닫기
+
+            # 500ms 대기 후 테스트 종료
+            test_window.after(100, finish_test)
             return
+        
 
         # 현재 문제와 정답(뜻)을 설정
         current_word, correct_meaning = words[current_question_index]
@@ -105,19 +145,18 @@ def start_test():
 
     def check_answer(selected_option, correct_meaning):
         """메시지 박스를 체크 했을 때, 사용자의 선택이 정답인지 확인합니다."""
-        global current_question_index, correct_count, wrong_count, show_messagebox_var
-        if show_messagebox_var.get():
-            if selected_option == correct_meaning:
-                correct_count += 1
-                messagebox.showinfo("정답", "정답입니다!") # 정답 메시지 출력
-            else:
-                wrong_count += 1
-                messagebox.showerror("오답", f"오답입니다! 정답: {correct_meaning}") # 오답 메시지 출력
+        global show_messagebox_var, current_question_index, correct_count, wrong_count
+        current_word = words[current_question_index][0] # 현재 단어
+
+        if selected_option == correct_meaning:
+            correct_count += 1
+            if show_messagebox_var.get():
+                messagebox.showinfo("정답", "정답입니다!")
         else:
-            if selected_option == correct_meaning:
-                correct_count += 1
-            else:
-                wrong_count += 1       
+            wrong_count += 1          
+            wrong_words.append((current_word, correct_meaning))  # 틀린 단어 저장
+            if show_messagebox_var.get():
+                messagebox.showerror("오답", f"오답입니다! 정답: {correct_meaning}")      
 
         # 다음 문제로 이동
         update_counts()
@@ -165,7 +204,6 @@ def start_test():
         button.grid(row=i + 2, column=1, pady=5)  # 버튼을 중앙 열에 배치
 
     # 첫 번째 문제 표시
-    current_question_index = 0
     next_question()
 
 # Tkinter GUI 설정
@@ -186,10 +224,11 @@ test_button = tk.Button(root, text="테스트 시작", command=start_test, width
 test_button.grid(row=0, column=1, padx=10, pady=10, sticky="we")
 
 # 체크박스 상태를 저장하는 변수
-show_correct_var = tk.BooleanVar(value=False)
-show_wrong_var = tk.BooleanVar(value=False)
+show_correct_var = tk.BooleanVar(value=True)
+show_wrong_var = tk.BooleanVar(value=True)
 show_messagebox_var = tk.BooleanVar(value=False)
 language_var = tk.StringVar(value="영어")
+wrong_words_var = tk.BooleanVar(value=True)
 
 # 체크박스 추가
 correct_checkbox = tk.Checkbutton(root, text="맞은 개수 보기", variable=show_correct_var)
@@ -200,6 +239,9 @@ wrong_checkbox.grid(row=4, column=0, padx=10, pady=5, sticky="w")
 
 messagebox_checkbox = tk.Checkbutton(root, text="정답 알림 보기", variable=show_messagebox_var)
 messagebox_checkbox.grid(row=3, column=1, padx=10, pady=5, sticky="w")
+
+wrong_words_checkbox = tk.Checkbutton(root, text="틀린 단어 다운로드", variable=wrong_words_var)
+wrong_words_checkbox.grid(row=4, column=1, padx=10, pady=5, sticky="w")
 
 # Tkinter 루프 시작
 root.mainloop()
